@@ -23,7 +23,7 @@ const s3Region = envOrThrow("S3_REGION");
 const s3CfDistribution = envOrThrow("S3_CF_DISTRO");
 const port = envOrThrow("PORT");
 
-const db = newDatabase(pathToDB);
+export const db = newDatabase(pathToDB);
 
 export const cfg: ApiConfig = {
   db: db,
