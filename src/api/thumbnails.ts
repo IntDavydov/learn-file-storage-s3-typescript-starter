@@ -3,38 +3,9 @@ import { respondWithJSON } from "./json";
 import { getVideo, updateVideo } from "../db/videos";
 import { db, type ApiConfig } from "../config";
 import type { BunRequest } from "bun";
-import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
-
-type Thumbnail = {
-  data: ArrayBuffer;
-  mediaType: string;
-};
-
-const videoThumbnails: Map<string, Thumbnail> = new Map();
-
-export async function handlerGetThumbnail(cfg: ApiConfig, req: BunRequest) {
-  const { videoId } = req.params as { videoId?: string };
-  if (!videoId) {
-    throw new BadRequestError("Invalid video ID");
-  }
-
-  const video = getVideo(cfg.db, videoId);
-  if (!video) {
-    throw new NotFoundError("Couldn't find video");
-  }
-
-  const thumbnail = videoThumbnails.get(videoId);
-  if (!thumbnail) {
-    throw new NotFoundError("Thumbnail not found");
-  }
-
-  return new Response(thumbnail.data, {
-    headers: {
-      "Content-Type": thumbnail.mediaType,
-      "Cache-Control": "no-store",
-    },
-  });
-}
+import { BadRequestError, UserForbiddenError } from "./errors";
+import { getAssetDiskPath, getAssetURL, mediaTypeToExt } from "./assets";
+import { randomBytes } from "node:crypto";
 
 export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -48,8 +19,8 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   console.log("uploading thumbnail for video", videoId, "by user", userID);
 
   // TODO: implement the upload here
-  const formData = await req.formData();
-  const file = formData.get("thumbnail");
+  const formData = await req.formData(); // multipart/form-data
+  const file = formData.get("thumbnail"); // get field type of FormDataEntry
 
   if (!(file instanceof File)) throw new BadRequestError("Wrong file type");
 
@@ -58,17 +29,28 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     throw new BadRequestError("Upload size excided");
 
   const mediaType = file.type;
+
+  if (mediaType !== "image/jpeg" && mediaType !== "image/png")
+    throw new BadRequestError("wrong image type, must be: .jpeg/.png");
+
   const data = await file.arrayBuffer();
+
+  console.log(mediaType);
 
   const video = getVideo(db, videoId);
   if (!video) throw new UserForbiddenError("Not authorized");
 
-  videoThumbnails.set(video.id, { data, mediaType });
+  const ext = mediaTypeToExt(mediaType);
+  console.log("random bytes: ", randomBytes(2));
+  const filename = `${randomBytes(32).toString("base64url")}${ext}`;
 
-  const thumbnailURL = `http://localhost:8091/api/thumbnails/${videoId}`;
-  video.thumbnailURL = thumbnailURL;
+  const assetDiskPath = getAssetDiskPath(cfg, filename);
+  Bun.write(assetDiskPath, data);
+
+  const filePath = getAssetURL(cfg, assetDiskPath);
+  video.thumbnailURL = filePath;
+
   updateVideo(db, video);
-
 
   return respondWithJSON(200, JSON.stringify(video));
 }
