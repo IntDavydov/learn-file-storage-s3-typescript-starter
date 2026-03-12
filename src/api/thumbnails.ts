@@ -4,8 +4,11 @@ import { getVideo, updateVideo } from "../db/videos";
 import { db, type ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, UserForbiddenError } from "./errors";
-import { getAssetDiskPath, getAssetURL, mediaTypeToExt } from "./assets";
-import { randomBytes } from "node:crypto";
+import {
+  getAssetDiskPath,
+  getAssetPath,
+  getAssetURL,
+} from "./assets";
 
 export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -40,16 +43,13 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const video = getVideo(db, videoId);
   if (!video) throw new UserForbiddenError("Not authorized");
 
-  const ext = mediaTypeToExt(mediaType);
-  console.log("random bytes: ", randomBytes(2));
-  const filename = `${randomBytes(32).toString("base64url")}${ext}`;
+  const filename = getAssetPath(mediaType); // id.ext
+  const assetDiskPath = getAssetDiskPath(cfg, filename); // /assets/id.ext
 
-  const assetDiskPath = getAssetDiskPath(cfg, filename);
-  Bun.write(assetDiskPath, data);
+  await Bun.write(assetDiskPath, data);
 
-  const filePath = getAssetURL(cfg, assetDiskPath);
+  const filePath = getAssetURL(cfg, assetDiskPath); // /assets/id.ext
   video.thumbnailURL = filePath;
-
   updateVideo(db, video);
 
   return respondWithJSON(200, JSON.stringify(video));
